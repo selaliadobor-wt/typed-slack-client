@@ -1,7 +1,17 @@
-import { Project, Scope, MethodDeclarationStructure } from "ts-morph";
+import {
+    Project,
+    Scope,
+    PropertyDeclaration,
+    ClassDeclaration,
+    WriterFunctions,
+    PropertySignature,
+    MethodDeclarationStructure,
+} from "ts-morph";
 import { toCamelCase, filterEmpty, areSameStringIgnoringCase } from "./util";
+import { method } from "bluebird";
+import * as fs from "fs";
 const pathToSlackWebClientArgumentDefinitions = "./node_modules/@slack/web-api/dist/methods.d.ts";
-
+const pathToWebClient = "./node_modules/@slack/web-api/dist/WebClient.d.ts";
 type SlackResponseType = {
     name: string;
     method: string;
@@ -16,33 +26,6 @@ export class Generator {
         });
     }
 
-    public generateSlackClientFile(generatedResponseTypeNames: string[], slackWebClientFunctionPaths: string[]) {
-        let methods = this.getMethodDeclerationsForSlackTypes(generatedResponseTypeNames, slackWebClientFunctionPaths);
-        let slackWebClientArgumentTypeNames = this.getSlackWebClientArgumentTypeNames();
-        let clientFile = this.outputProject.createSourceFile(this.clientFilePath);
-        let clientClass = clientFile.addClass({ name: "SlackTypedClient" });
-        clientClass.addMethods(methods);
-        clientClass.addProperty({ type: "WebClient", name: "slack" });
-        clientClass
-            .addConstructor({
-                parameters: [{ type: "WebClient", name: "slack" }],
-            })
-            .setBodyText("this.slack = slack");
-        clientFile.addImportDeclaration({
-            namedImports: ["WebClient"],
-            moduleSpecifier: "@slack/client",
-        });
-        clientFile.addImportDeclaration({
-            namedImports: slackWebClientArgumentTypeNames,
-            moduleSpecifier: "@slack/web-api/dist/methods",
-        });
-        clientFile.addImportDeclaration({
-            namedImports: ["Paths", "Definitions"],
-            moduleSpecifier: "./slackTypes",
-        });
-        return clientFile;
-    }
-
     getSlackWebClientArgumentTypeNames() {
         let slackArgumentsFile = this.outputProject.addExistingSourceFile(pathToSlackWebClientArgumentDefinitions);
         let slackWebClientArgumentTypeNames = slackArgumentsFile
@@ -52,7 +35,7 @@ export class Generator {
         return slackWebClientArgumentTypeNames;
     }
 
-    getMethodDeclerationsForSlackTypes(generatedResponseTypeNames: string[], slackWebClientFunctionPaths: string[]) {
+    generateTypedSlackClient(generatedResponseTypeNames: string[], slackWebClientFunctionPaths: string[]) {
         let slackWebClientArgumentTypeNames = this.getSlackWebClientArgumentTypeNames();
         let slackWebClientResponseTypes: SlackResponseType[] = slackWebClientFunctionPaths.map(member => {
             let typeName = member
@@ -73,37 +56,77 @@ export class Generator {
             missingDefinitions.map(definition => definition.method)
         );
 
-        return slackWebClientResponseTypes
+        let webClientFile = this.outputProject.createSourceFile(
+            this.clientFilePath,
+            fs
+                .readFileSync(pathToWebClient)!
+                .toString()
+                .replace(new RegExp(`from "./`, "g"), `from "@slack/web-api/dist/`),
+            { overwrite: true }
+        );
+
+        let webClientClass = webClientFile.getClassOrThrow("WebClient");
+        webClientClass.rename("TypedWebClient");
+        webClientClass.getConstructors().forEach(constructor => constructor.remove());
+        webClientClass.setHasDeclareKeyword(false);
+        webClientClass.addMethod(this.typedWebClientCreatorMethod);
+
+        slackWebClientResponseTypes
             .filter(definition => generatedResponseTypeNames.includes(definition.name))
-            .map(definition => {
+            .forEach(definition => {
                 let possibleArgumentType = definition.name + "Arguments"; //The case may not match, so search for an exact match
                 let exactArgumentType = slackWebClientArgumentTypeNames.find(typeName =>
                     areSameStringIgnoringCase(typeName, possibleArgumentType)
                 );
 
+                let methodPath = definition.method.split(".").filter(segment => segment !== "");
+
+                let rootProperty: PropertyDeclaration | undefined = undefined;
+                while (methodPath.length > 0) {
+                    let element = methodPath.shift();
+                    if (methodPath.length == 0) {
+                        //It was the method, change the return type
+                        (<PropertySignature>(
+                            rootProperty!.getFirstDescendant(
+                                (node: any) => node.getName != undefined && node.getName() == element
+                            )
+                        ))!.setType(`(options?: ${exactArgumentType}) => Promise<
+| (Paths.${definition.name}.Responses.Success 
+| Paths.${definition.name}.Responses.Error)>`);
+                    } else {
+                        if (rootProperty == undefined) {
+                            rootProperty = webClientClass.getProperty(element!);
+                        } else {
+                            rootProperty = <PropertyDeclaration>(
+                                rootProperty!.getFirstDescendant(
+                                    (node: any) => node.getName != undefined && node.getName() == element
+                                )
+                            );
+                        }
+                    }
+                }
                 if (exactArgumentType == null) {
                     console.warn("Failed to find matching slack arguments for class: ", JSON.stringify(definition));
                     return null;
                 }
+            });
 
-                return {
-                    name: toCamelCase(definition.name),
-                    parameters: [{ name: "args", type: exactArgumentType }],
-                    returnType: `Promise<
-| (Paths.${definition.name}.Responses.Success 
-| Paths.${definition.name}.Responses.Error) 
-& Paths.${definition.name}.Responses.SuccessOrErrorPredicate>`,
-                    isAsync: true,
-                    bodyText: `let response = <any>await this.slack${definition.method}(args);
-response["isSuccess"] = new Paths.AuthTest.Responses.SuccessOrErrorPredicate(response).isSuccess();
-return response;`,
-                };
-            })
-            .filter(filterEmpty);
+        webClientFile.addImportDeclaration({
+            namedImports: ["WebClient"],
+            moduleSpecifier: "@slack/client",
+        });
+        webClientFile.addImportDeclaration({
+            namedImports: slackWebClientArgumentTypeNames,
+            moduleSpecifier: "@slack/web-api/dist/methods",
+        });
+        webClientFile.addImportDeclaration({
+            namedImports: ["Paths", "Definitions"],
+            moduleSpecifier: "./slackTypes",
+        });
     }
 
     generateSlackTypeFile(typeDefinitions: string) {
-        let typeDefFile = this.outputProject.createSourceFile(this.typeFilePath, typeDefinitions);
+        let typeDefFile = this.outputProject.createSourceFile(this.typeFilePath, typeDefinitions, { overwrite: true });
         typeDefFile
             .getNamespaceOrThrow("Paths")
             .setHasDeclareKeyword(false)
@@ -111,33 +134,18 @@ return response;`,
             .getNamespaces()
             .forEach(nameSpace => {
                 let responsesNamespace = nameSpace.setIsExported(true).getNamespaceOrThrow("Responses");
-                let predicateClasss = responsesNamespace
-                    .setIsExported(true)
-                    .addClass({ name: "SuccessOrErrorPredicate", isExported: true });
-                predicateClasss
-                    .addConstructor({
-                        parameters: [{ scope: Scope.Private, name: "response", type: "Success | Error" }],
-                    })
-                    .setBodyText("");
-                predicateClasss
-                    .addMethod({
-                        name: "isSuccess",
-                        returnType: "this is Success",
-                    })
-                    .setBodyText("return JSON.parse((<Error>this.response).ok) == false;");
-                let success = responsesNamespace.getInterface("Success");
-                if (success != null) {
-                    let indexSignature = success.getIndexSignature(() => true);
-                    if (indexSignature) {
-                        indexSignature.remove();
-                    }
-                }
+
+                responsesNamespace.setIsExported(true);
                 let error = responsesNamespace.getInterface("Error");
                 if (error != null) {
                     let indexSignature = error.getIndexSignature(() => true);
                     if (indexSignature) {
                         indexSignature.remove();
                     }
+                    error.addProperty({
+                        name: "response_metadata",
+                        type: "string | object | undefined",
+                    });
                 }
             });
 
@@ -145,8 +153,55 @@ return response;`,
             .getNamespaceOrThrow("Definitions")
             .setHasDeclareKeyword(false)
             .setIsExported(true);
+
+        typeDefFile
+            .getNamespaceOrThrow("Definitions")
+            .getTypeAlias("DefsOkFalse")!
+            .set({ type: "false" });
+        typeDefFile
+            .getNamespaceOrThrow("Definitions")
+            .getTypeAlias("DefsOkTrue")!
+            .set({ type: "true" });
         return typeDefFile;
     }
+
+    private readonly typedWebClientCreatorMethod: MethodDeclarationStructure = {
+        name: "createClient",
+        isStatic: true,
+        returnType: "TypedWebClient",
+        parameters: [
+            {
+                type: "string",
+                name: "token",
+            },
+            {
+                type: "WebClientOptions",
+                name: `{
+    slackApiUrl,
+    logger,
+    logLevel,
+    maxRequestConcurrency,
+    retryConfig,
+    agent,
+    tls,
+    rejectRateLimitedCalls,
+    headers,
+}`,
+            },
+        ],
+        bodyText: `return <any>new WebClient(token, {
+    slackApiUrl,
+    logger,
+    logLevel,
+    maxRequestConcurrency,
+    retryConfig,
+    agent,
+    tls,
+    rejectRateLimitedCalls,
+    headers,
+})`,
+    };
+
     async save() {
         await this.outputProject.save();
     }

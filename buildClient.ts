@@ -8,7 +8,7 @@ const slackApiDocUrl =
     "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json";
 
 const pathToSlackTypeTs = "dist/slackTypes.ts";
-const pathToSlackClientTs = "dist/slackTypedClient.ts";
+const pathToSlackClientTs = "dist/typedSlackWebClient.ts";
 
 const slackOpenApiNameSubstitutions = { $200: "Success", Default: "Error" };
 
@@ -53,7 +53,8 @@ async function main(): Promise<void> {
 
     let slackWebClientFunctionPaths = iterate(new WebClient(), property => typeof property == "function");
 
-    generator.generateSlackClientFile(generatedResponseTypeNames, slackWebClientFunctionPaths);
+    generator.generateTypedSlackClient(generatedResponseTypeNames, slackWebClientFunctionPaths);
+
     console.info(`Generated Client successfully`);
     console.info(`Saving output to ./dist`);
     await generator.save();
