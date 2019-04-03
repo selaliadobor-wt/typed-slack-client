@@ -6,7 +6,6 @@ import {
     WriterFunctions,
     PropertySignature,
     MethodDeclarationStructure,
-    FunctionDeclarationStructure,
 } from "ts-morph";
 import { toCamelCase, filterEmpty, areSameStringIgnoringCase } from "./util";
 import { method } from "bluebird";
@@ -69,7 +68,8 @@ export class Generator {
         let webClientClass = webClientFile.getClassOrThrow("WebClient");
         webClientClass.rename("TypedWebClient");
         webClientClass.getConstructors().forEach(constructor => constructor.remove());
-        webClientClass.setHasDeclareKeyword(true);
+        webClientClass.setHasDeclareKeyword(false);
+        webClientClass.addMethod(this.typedWebClientCreatorMethod);
 
         slackWebClientResponseTypes
             .filter(definition => generatedResponseTypeNames.includes(definition.name))
@@ -123,7 +123,6 @@ export class Generator {
             namedImports: ["Paths", "Definitions"],
             moduleSpecifier: "./slackTypes",
         });
-        webClientFile.addFunction(this.typedWebClientCreatorMethod).setIsExported(true);
     }
 
     generateSlackTypeFile(typeDefinitions: string) {
@@ -166,14 +165,14 @@ export class Generator {
         return typeDefFile;
     }
 
-    private readonly typedWebClientCreatorMethod: FunctionDeclarationStructure = {
-        name: "createTypedSlackWebClient",
+    private readonly typedWebClientCreatorMethod: MethodDeclarationStructure = {
+        name: "createClient",
+        isStatic: true,
         returnType: "TypedWebClient",
         parameters: [
             {
                 type: "string",
                 name: "token",
-                hasQuestionToken: true,
             },
             {
                 type: "WebClientOptions",
@@ -188,7 +187,6 @@ export class Generator {
     rejectRateLimitedCalls,
     headers,
 }`,
-                initializer: "{}",
             },
         ],
         bodyText: `return <any>new WebClient(token, {
