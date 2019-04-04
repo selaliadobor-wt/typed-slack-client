@@ -79,4 +79,5 @@ typings/
 # DynamoDB Local files
 .dynamodb/
 
+npm-dist/*.ts
 dist/

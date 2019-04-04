@@ -4,7 +4,7 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "build": "ts-node ./buildClient.ts"
+        "build": "ts-node ./buildClient.ts && cp dist/* npm-dist/"
     },
     "author": "",
     "license": "ISC",
