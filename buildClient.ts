@@ -19,6 +19,8 @@ function typeNameConvertor(id: SchemaId): string[] {
         names[lastIndex] = names[lastIndex];
     }
     names = names.map(name => {
+        name = name.startsWith("Defs") ? name.replace("Defs", "") : name;
+        name = name.startsWith("Objs") ? name.replace("Objs", "") : name;
         return Object.keys(slackOpenApiNameSubstitutions).includes(name)
             ? (<any>slackOpenApiNameSubstitutions)[name]
             : name;
