@@ -143,6 +143,10 @@ export class Generator {
                     if (indexSignature) {
                         indexSignature.remove();
                     }
+                    let okValue = error.getProperty("ok");
+                    if (okValue != undefined) {
+                        okValue.set({ type: "Definitions.DefsOkFalse" });
+                    }
                     error.addProperty({
                         name: "response_metadata",
                         type: "string | object | undefined",
