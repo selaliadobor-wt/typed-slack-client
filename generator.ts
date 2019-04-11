@@ -7,6 +7,9 @@ import {
     PropertySignature,
     MethodDeclarationStructure,
     FunctionDeclarationStructure,
+    NamespaceDeclarationStructure,
+    InterfaceDeclaration,
+    InterfaceDeclarationStructure,
 } from "ts-morph";
 import { toCamelCase, filterEmpty, areSameStringIgnoringCase } from "./util";
 import { method } from "bluebird";
@@ -65,6 +68,8 @@ export class Generator {
                 .replace(new RegExp(`from "./`, "g"), `from "@slack/web-api/dist/`),
             { overwrite: true }
         );
+
+        webClientFile.removeDefaultExport();
 
         let webClientClass = webClientFile.getClassOrThrow("WebClient");
         webClientClass.rename("TypedWebClient");
@@ -128,6 +133,7 @@ export class Generator {
 
     generateSlackTypeFile(typeDefinitions: string) {
         let typeDefFile = this.outputProject.createSourceFile(this.typeFilePath, typeDefinitions, { overwrite: true });
+
         typeDefFile
             .getNamespaceOrThrow("Paths")
             .setHasDeclareKeyword(false)
@@ -143,6 +149,10 @@ export class Generator {
                     if (indexSignature) {
                         indexSignature.remove();
                     }
+                    let okValue = error.getProperty("ok");
+                    if (okValue != undefined) {
+                        okValue.set({ type: "Definitions.OkFalse" });
+                    }
                     error.addProperty({
                         name: "response_metadata",
                         type: "string | object | undefined",
@@ -157,12 +167,38 @@ export class Generator {
 
         typeDefFile
             .getNamespaceOrThrow("Definitions")
-            .getTypeAlias("DefsOkFalse")!
+            .getTypeAlias("OkFalse")!
             .set({ type: "false" });
         typeDefFile
             .getNamespaceOrThrow("Definitions")
-            .getTypeAlias("DefsOkTrue")!
+            .getTypeAlias("OkTrue")!
             .set({ type: "true" });
+
+        let additionalTypeDefFile = this.outputProject.addExistingSourceFile("./additionalSlackTypes.ts");
+        this.outputProject.createSourceFile(
+            "additionalSlackTypes.ts",
+            fs.readFileSync("./additionalSlackTypes.ts")!.toString(),
+            { overwrite: true }
+        );
+
+        let additionalPathNamespace = additionalTypeDefFile.getNamespace("Paths");
+
+        let additionalPaths =
+            additionalPathNamespace == null
+                ? []
+                : additionalPathNamespace.getNamespaces().map(namespace => namespace.getStructure());
+
+        typeDefFile.getNamespaceOrThrow("Paths").addNamespaces(additionalPaths);
+
+        let additionalDefinitionNamespace = additionalTypeDefFile.getNamespace("Definitions");
+
+        let additionalDefinitions =
+            additionalDefinitionNamespace == null
+                ? []
+                : additionalDefinitionNamespace.getNamespaces().map(namespace => namespace.getStructure());
+
+        typeDefFile.getNamespaceOrThrow("Definitions").addNamespaces(additionalDefinitions);
+
         return typeDefFile;
     }
 
