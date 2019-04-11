@@ -6,9 +6,10 @@ import { Generator } from "./generator";
 
 const slackApiDocUrl =
     "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json";
-
-const pathToSlackTypeTs = "dist/slackTypes.ts";
-const pathToSlackClientTs = "dist/typedSlackWebClient.ts";
+const slackApiPatchedUrl =
+    "https://raw.githubusercontent.com/jolicode/slack-php-api/master/resources/slack-openapi-patched.json";
+const pathToSlackTypeTs = "slackTypes.ts";
+const pathToSlackClientTs = "typedSlackWebClient.ts";
 
 const slackOpenApiNameSubstitutions = { $200: "Success", Default: "Error" };
 
@@ -30,8 +31,8 @@ function typeNameConvertor(id: SchemaId): string[] {
 
 async function main(): Promise<void> {
     let generator: Generator = new Generator(pathToSlackTypeTs, pathToSlackClientTs);
-    console.info(`Downloading Slack API docs from ${slackApiDocUrl}`);
-    let slackApiDoc = await request.get(slackApiDocUrl, { json: true });
+    console.info(`Downloading Slack API docs from ${slackApiPatchedUrl}`);
+    let slackApiDoc = await request.get(slackApiPatchedUrl, { json: true });
     console.info(`Downloaded Slack API docs successfully`);
 
     console.info(`Generating Typescript definitions from docs`);
@@ -59,7 +60,8 @@ async function main(): Promise<void> {
 
     console.info(`Generated Client successfully`);
     console.info(`Saving output to ./dist`);
-    await generator.save();
+
+    await generator.outputProject.emit();
 
     console.info(`Saved output to ./dist`);
     console.info(`Complete.`);

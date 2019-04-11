@@ -69,6 +69,8 @@ export class Generator {
             { overwrite: true }
         );
 
+        webClientFile.removeDefaultExport();
+
         let webClientClass = webClientFile.getClassOrThrow("WebClient");
         webClientClass.rename("TypedWebClient");
         webClientClass.getConstructors().forEach(constructor => constructor.remove());
@@ -173,6 +175,11 @@ export class Generator {
             .set({ type: "true" });
 
         let additionalTypeDefFile = this.outputProject.addExistingSourceFile("./additionalSlackTypes.ts");
+        this.outputProject.createSourceFile(
+            "additionalSlackTypes.ts",
+            fs.readFileSync("./additionalSlackTypes.ts")!.toString(),
+            { overwrite: true }
+        );
 
         let additionalPathNamespace = additionalTypeDefFile.getNamespace("Paths");
 

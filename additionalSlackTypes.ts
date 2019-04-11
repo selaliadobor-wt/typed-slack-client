@@ -26,7 +26,7 @@ export namespace Paths {
 
 export namespace Definitions {
     export namespace SlashCommands {
-        interface RequestBody {
+        export interface RequestBody {
             token: string;
             team_id: string;
             team_domain: string;
@@ -103,11 +103,23 @@ export namespace Definitions {
         }
 
         export interface PayloadAction {
-            selected_option: any | null;
-            block_id: any;
-            name: string;
-            value: string;
             type: string;
+            block_id: string;
+            action_id: string;
+            selected_option: PayloadActionSelectedOption;
+            placeholder: PayloadActionPlaceholder;
+            action_ts: string;
+        }
+
+        interface PayloadActionSelectedOption {
+            text: Text;
+            value: string;
+        }
+
+        interface PayloadActionPlaceholder {
+            type: string;
+            text: string;
+            emoji: boolean;
         }
     }
 }

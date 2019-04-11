@@ -80,4 +80,6 @@ typings/
 .dynamodb/
 
 npm-dist/*.ts
+npm-dist/*.js
+
 dist/
